@@ -6,7 +6,11 @@ import logging
 import os
 from pathlib import Path
 from functools import lru_cache
-from ..models import ChatMessage, ChatCompletionResponse, ChatCompletionChoice, ChatCompletionUsage
+from ..models import (
+    ChatMessage, ChatCompletionResponse, ChatCompletionChoice, ChatCompletionUsage,
+    CompletionResponse, CompletionChoice, CompletionUsage,
+    EmbeddingResponse, EmbeddingData, EmbeddingUsage
+)
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -381,6 +385,189 @@ class MLXService:
         except Exception as e:
             logger.error(f"Error generating completion: {e}")
             raise RuntimeError(f"Failed to generate completion: {str(e)}")
+    
+    async def generate_text_completion(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        stop: Optional[List[str]] = None,
+        model: Optional[str] = None
+    ) -> CompletionResponse:
+        """Generate a text completion (OpenAI completions API)."""
+        # Ensure the requested model is loaded
+        requested_model = model or self.current_model_name or self.get_default_model()
+        
+        if not await self.ensure_model_loaded(requested_model):
+            available_models = list(self.available_models.keys()) if self.available_models else ["No models available"]
+            raise RuntimeError(f"Failed to load model '{requested_model}'. Available models: {available_models}")
+        
+        if not self.model_loaded:
+            raise RuntimeError("No model loaded after ensure_model_loaded")
+
+        settings = get_settings()
+        
+        # Use provided parameters or fallback to settings
+        max_tokens = max_tokens or settings.llm_model_max_tokens
+        temperature = temperature or settings.llm_model_temperature
+        model_name = requested_model or self.current_model_name
+        
+        logger.debug(f"Generating text completion for prompt: {prompt[:100]}...")
+        
+        try:
+            # Tokenize for token counting
+            tokens = self.tokenizer.encode(prompt)
+            prompt_tokens = len(tokens)
+            
+            # Generate with correct MLX-LM API
+            start_time = time.time()
+            logger.debug(f"Calling generate with max_tokens={max_tokens}, temperature={temperature}")
+            
+            # Try different parameter approaches based on MLX-LM version
+            response_text = None
+            error_details = []
+            
+            # Approach 1: Use 'temp' parameter (newer MLX-LM)
+            try:
+                response_text = generate(
+                    model=self.model,
+                    tokenizer=self.tokenizer,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temp=temperature
+                )
+                logger.debug("Successfully used generate with temp parameter")
+            except TypeError as e:
+                error_details.append(f"temp parameter: {e}")
+                
+                # Approach 2: Use 'temperature' parameter (older MLX-LM)
+                try:
+                    response_text = generate(
+                        model=self.model,
+                        tokenizer=self.tokenizer,
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature
+                    )
+                    logger.debug("Successfully used generate with temperature parameter")
+                except TypeError as e2:
+                    error_details.append(f"temperature parameter: {e2}")
+                    
+                    # Approach 3: Positional arguments only
+                    try:
+                        response_text = generate(
+                            self.model,
+                            self.tokenizer,
+                            prompt
+                        )
+                        logger.warning("Used basic generate call without sampling parameters")
+                    except Exception as e3:
+                        error_details.append(f"basic call: {e3}")
+                        logger.error("All generate approaches failed: " + "; ".join(error_details))
+                        raise RuntimeError(f"Failed to generate completion with all approaches: {'; '.join(error_details)}")
+            
+            if response_text is None:
+                raise RuntimeError("Generate function returned None")
+            
+            generation_time = time.time() - start_time
+            
+            # Clean up response text (remove the prompt echo if present)
+            if response_text.startswith(prompt):
+                response_text = response_text[len(prompt):].strip()
+            
+            # Calculate completion token count
+            completion_tokens_encoded = self.tokenizer.encode(response_text)
+            completion_tokens = len(completion_tokens_encoded)
+            total_tokens = prompt_tokens + completion_tokens
+            
+            logger.info(f"Generated text completion in {generation_time:.2f}s, "
+                       f"tokens: {prompt_tokens}+{completion_tokens}={total_tokens}")
+            
+            # Create response
+            return CompletionResponse(
+                id=f"cmpl-{uuid.uuid4().hex}",
+                created=int(time.time()),
+                model=model_name,
+                choices=[
+                    CompletionChoice(
+                        text=response_text,
+                        index=0,
+                        finish_reason="stop"
+                    )
+                ],
+                usage=CompletionUsage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens
+                )
+            )
+            
+        except Exception as e:
+            logger.error(f"Error generating text completion: {e}")
+            raise RuntimeError(f"Failed to generate text completion: {str(e)}")
+    
+    async def generate_embeddings(
+        self,
+        input_texts: List[str],
+        model: Optional[str] = None
+    ) -> EmbeddingResponse:
+        """Generate embeddings for input texts."""
+        # Note: This is a placeholder implementation
+        # MLX-LM models are primarily for text generation, not embeddings
+        # For actual embeddings, you'd need specialized embedding models
+        
+        # Ensure the requested model is loaded
+        requested_model = model or self.current_model_name or self.get_default_model()
+        
+        if not await self.ensure_model_loaded(requested_model):
+            available_models = list(self.available_models.keys()) if self.available_models else ["No models available"]
+            raise RuntimeError(f"Failed to load model '{requested_model}'. Available models: {available_models}")
+        
+        model_name = requested_model or self.current_model_name
+        
+        logger.warning("Embedding generation requested but not fully supported by MLX-LM text generation models")
+        
+        # Placeholder implementation - in reality you'd need proper embedding models
+        embeddings_data = []
+        total_tokens = 0
+        
+        for i, text in enumerate(input_texts):
+            # Count tokens for usage tracking
+            tokens = self.tokenizer.encode(text)
+            total_tokens += len(tokens)
+            
+            # Generate a dummy embedding (in practice, use proper embedding model)
+            # This creates a random embedding vector for demonstration
+            import random
+            random.seed(hash(text) % (2**32))  # Deterministic based on text
+            embedding = [random.uniform(-1, 1) for _ in range(384)]  # Common embedding size
+            
+            embeddings_data.append(
+                EmbeddingData(
+                    object="embedding",
+                    embedding=embedding,
+                    index=i
+                )
+            )
+        
+        return EmbeddingResponse(
+            object="list",
+            data=embeddings_data,
+            model=model_name,
+            usage=EmbeddingUsage(
+                prompt_tokens=total_tokens,
+                total_tokens=total_tokens
+            )
+        )
+    
+    def is_embedding_model(self, model_name: str) -> bool:
+        """Check if a model is designed for embeddings."""
+        embedding_indicators = [
+            'embed', 'embedding', 'sentence', 'minilm', 'bert', 'roberta'
+        ]
+        model_lower = model_name.lower()
+        return any(indicator in model_lower for indicator in embedding_indicators)
     
     def is_model_loaded(self) -> bool:
         """Check if model is loaded."""

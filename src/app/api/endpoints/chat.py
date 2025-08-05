@@ -7,10 +7,10 @@ from ...models import (
     ErrorDetail
 )
 from ...services.mlx_service import MLXService
-from ...core.dependencies import get_model_required
+from ...core.dependencies import get_mlx_service_dependency
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/v1/chat", tags=["Chat Completions"])
+router = APIRouter(prefix="/v1/chat", tags=["OpenAI Chat Completions"])
 
 
 @router.post(
@@ -27,11 +27,25 @@ router = APIRouter(prefix="/v1/chat", tags=["Chat Completions"])
 )
 async def create_chat_completion(
     request: ChatCompletionRequest,
-    mlx_service: MLXService = Depends(get_model_required)
+    mlx_service: MLXService = Depends(get_mlx_service_dependency)
 ) -> ChatCompletionResponse:
-    """Create a chat completion using the loaded MLX model."""
+    """Create a chat completion using the loaded MLX model (OpenAI-compatible)."""
     try:
         logger.info(f"Processing chat completion request for model: {request.model}")
+        
+        # Check for unsupported parameters and log warnings
+        if request.n and request.n > 1:
+            logger.warning(f"Multiple completions requested (n={request.n}), MLX supports only 1")
+            
+        if request.tools:
+            logger.warning("Tools/function calling requested but not supported")
+            
+        if request.response_format:
+            logger.info("Response format specified - basic JSON mode may be supported")
+            
+        if request.stream:
+            logger.warning("Streaming requested but using non-streaming endpoint")
+        
         response = await mlx_service.generate_completion(
             messages=request.messages,
             max_tokens=request.max_tokens,
@@ -73,7 +87,7 @@ async def create_chat_completion(
 )
 async def create_chat_completion_stream(
     request: ChatCompletionRequest,
-    mlx_service: MLXService = Depends(get_model_required)
+    mlx_service: MLXService = Depends(get_mlx_service_dependency)
 ):
     """Create a streaming chat completion (not yet implemented)."""
     del request, mlx_service  # Avoid unused variable warnings

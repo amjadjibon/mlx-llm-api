@@ -128,7 +128,7 @@ async def unload_model(
     "/models",
     response_model=ModelListResponse,
     summary="List available models",
-    description="List all available models in the model directory",
+    description="List all available models in the model directory (OpenAI-compatible)",
     responses={
         200: {"description": "List of models", "model": ModelListResponse}
     }
@@ -136,7 +136,7 @@ async def unload_model(
 async def list_models(
     mlx_service: MLXService = Depends(get_mlx_service_dependency)
 ) -> ModelListResponse:
-    """List all available models."""
+    """List all available models (OpenAI-compatible endpoint)."""
     models = []
     available_models = mlx_service.get_available_models()
     current_time = int(time.time())
@@ -151,13 +151,49 @@ async def list_models(
                     owned_by="mlx-llm-api"
                 )
             )
+        logger.info(f"Listed {len(models)} available models")
     else:
-        # No models available
         logger.warning("No models available in model directory")
     
     return ModelListResponse(
         object="list",
         data=models
+    )
+
+
+@router.get(
+    "/models/{model_id}",
+    response_model=ModelInfo,
+    summary="Retrieve a model",
+    description="Get details about a specific model (OpenAI-compatible)",
+    responses={
+        200: {"description": "Model details", "model": ModelInfo},
+        404: {"description": "Model not found", "model": ErrorResponse}
+    }
+)
+async def get_model(
+    model_id: str,
+    mlx_service: MLXService = Depends(get_mlx_service_dependency)
+) -> ModelInfo:
+    """Get details about a specific model (OpenAI-compatible endpoint)."""
+    available_models = mlx_service.get_available_models()
+    
+    if model_id not in available_models:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorDetail(
+                type="model_not_found",
+                message=f"Model '{model_id}' not found",
+                code="MODEL_NOT_FOUND",
+                details={"available_models": list(available_models.keys())}
+            ).model_dump()
+        )
+    
+    return ModelInfo(
+        id=model_id,
+        object="model",
+        created=int(time.time()),
+        owned_by="mlx-llm-api"
     )
 
 

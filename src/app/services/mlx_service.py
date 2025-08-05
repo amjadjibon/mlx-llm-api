@@ -25,7 +25,7 @@ class MLXService:
         self.model_directory: Optional[str] = None
         
     def discover_models(self, model_directory: str) -> Dict[str, str]:
-        """Discover all available models in the specified directory."""
+        """Discover all available models in the specified directory and subdirectories."""
         models = {}
         
         if not os.path.exists(model_directory):
@@ -36,19 +36,8 @@ class MLXService:
             model_dir_path = Path(model_directory)
             logger.info(f"Discovering models in: {model_directory}")
             
-            # Look for model directories or files
-            for item in model_dir_path.iterdir():
-                if item.is_dir():
-                    # Check if directory contains model files
-                    if self._is_model_directory(item):
-                        model_name = item.name
-                        models[model_name] = str(item)
-                        logger.debug(f"Found model directory: {model_name} -> {item}")
-                elif item.is_file() and item.suffix in ['.safetensors', '.bin', '.pth']:
-                    # Single model file
-                    model_name = item.stem
-                    models[model_name] = str(item)
-                    logger.debug(f"Found model file: {model_name} -> {item}")
+            # Look for models in the main directory and subdirectories
+            self._scan_directory_for_models(model_dir_path, models)
             
             logger.info(f"Discovered {len(models)} models: {list(models.keys())}")
             
@@ -57,27 +46,115 @@ class MLXService:
             
         return models
     
+    def _scan_directory_for_models(self, directory: Path, models: Dict[str, str], max_depth: int = 2, current_depth: int = 0) -> None:
+        """Recursively scan directory for models up to max_depth."""
+        if current_depth > max_depth:
+            return
+            
+        try:
+            for item in directory.iterdir():
+                if item.is_dir():
+                    # Check if this directory itself is a model
+                    if self._is_model_directory(item):
+                        # Use a hierarchical name if nested
+                        if current_depth > 0:
+                            model_name = f"{directory.name}/{item.name}"
+                        else:
+                            model_name = item.name
+                        models[model_name] = str(item)
+                        logger.debug(f"Found model directory: {model_name} -> {item}")
+                    else:
+                        # Recurse into subdirectory to look for models
+                        self._scan_directory_for_models(item, models, max_depth, current_depth + 1)
+                        
+                elif item.is_file() and item.suffix in ['.safetensors', '.bin', '.pth', '.npz']:
+                    # Single model file
+                    if current_depth > 0:
+                        model_name = f"{directory.name}/{item.stem}"
+                    else:
+                        model_name = item.stem
+                    models[model_name] = str(item)
+                    logger.debug(f"Found model file: {model_name} -> {item}")
+                    
+        except PermissionError:
+            logger.warning(f"Permission denied accessing directory: {directory}")
+        except Exception as e:
+            logger.error(f"Error scanning directory {directory}: {e}")
+    
     def _is_model_directory(self, path: Path) -> bool:
         """Check if a directory contains MLX model files."""
-        files_in_dir = [f.name for f in path.iterdir() if f.is_file()]
-        
-        # Check for exact matches
-        for model_file in ['model.safetensors', 'weights.npz', 'config.json']:
-            if model_file in files_in_dir:
-                return True
-                
-        # Check for pattern matches (sharded models)
-        for file_in_dir in files_in_dir:
-            if (file_in_dir.startswith('model-') and 
-                (file_in_dir.endswith('.safetensors') or file_in_dir.endswith('.bin'))):
-                return True
-                
-        return False
+        try:
+            files_in_dir = [f.name for f in path.iterdir() if f.is_file()]
+            
+            # Must have config.json for MLX models
+            if 'config.json' not in files_in_dir:
+                return False
+            
+            # Check for model weight files
+            has_model_weights = False
+            
+            # Check for exact matches
+            for model_file in ['model.safetensors', 'weights.npz', 'pytorch_model.bin']:
+                if model_file in files_in_dir:
+                    has_model_weights = True
+                    break
+                    
+            # Check for sharded models (model-00001-of-00002.safetensors format)
+            if not has_model_weights:
+                for file_in_dir in files_in_dir:
+                    if (file_in_dir.startswith('model-') and 
+                        ('-of-' in file_in_dir) and
+                        (file_in_dir.endswith('.safetensors') or file_in_dir.endswith('.bin'))):
+                        has_model_weights = True
+                        break
+            
+            # Should also have tokenizer files for text models
+            has_tokenizer = any(f in files_in_dir for f in [
+                'tokenizer.json', 'tokenizer.model', 'vocab.txt', 'tokenizer_config.json'
+            ])
+            
+            # For text generation models, we expect both model weights and tokenizer
+            # For other models (like embeddings), weights + config might be enough
+            result = has_model_weights and (has_tokenizer or 'sentence_bert_config.json' in files_in_dir)
+            
+            if result:
+                logger.debug(f"Valid model directory: {path.name} (weights: {has_model_weights}, tokenizer: {has_tokenizer})")
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"Error checking model directory {path}: {e}")
+            return False
     
     def set_model_directory(self, model_directory: str) -> None:
         """Set the model directory and discover available models."""
         self.model_directory = model_directory
-        self.available_models = self.discover_models(model_directory)
+        
+        # Check if the path contains multiple model source directories
+        model_dir_path = Path(model_directory)
+        if model_dir_path.exists():
+            # Look for common model source directories
+            subdirs = [d for d in model_dir_path.iterdir() if d.is_dir()]
+            model_source_dirs = [d for d in subdirs if d.name in ['lmstudio-community', 'mlx-community', 'huggingface', 'models']]
+            
+            if model_source_dirs and not any(self._is_model_directory(d) for d in subdirs[:3]):  # Check first few dirs
+                logger.info(f"Found model source directories: {[d.name for d in model_source_dirs]}")
+                # Scan each source directory
+                all_models = {}
+                for source_dir in model_source_dirs:
+                    source_models = self.discover_models(str(source_dir))
+                    # Prefix with source directory name to avoid conflicts
+                    for model_name, model_path in source_models.items():
+                        prefixed_name = f"{source_dir.name}/{model_name}" if '/' not in model_name else model_name
+                        all_models[prefixed_name] = model_path
+                self.available_models = all_models
+            else:
+                # Single directory scan
+                self.available_models = self.discover_models(model_directory)
+        else:
+            logger.warning(f"Model directory does not exist: {model_directory}")
+            self.available_models = {}
+            
         logger.info(f"Set model directory to {model_directory} with {len(self.available_models)} models")
         
     def get_available_models(self) -> Dict[str, str]:

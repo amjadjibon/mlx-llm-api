@@ -1,4 +1,3 @@
-import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """Application lifespan context manager."""
     settings = get_settings()
     mlx_service = get_mlx_service()
@@ -120,7 +119,7 @@ def create_app() -> FastAPI:
         description="Get basic information about the API",
         tags=["Root"]
     )
-    async def root():
+    async def _root():
         """Root endpoint returning basic API information."""
         return {
             "name": settings.app_name,
@@ -137,7 +136,7 @@ def create_app() -> FastAPI:
         description="Simple ping endpoint for load balancers",
         tags=["Root"]
     )
-    async def ping():
+    async def _ping():
         """Simple ping endpoint."""
         return {"status": "ok"}
     

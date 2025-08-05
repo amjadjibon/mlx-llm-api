@@ -1,66 +1,88 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from fastapi import APIRouter, HTTPException, Depends, status
+import logging
 from ...models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ErrorResponse
+    ErrorResponse,
+    ErrorDetail
 )
-from ...services.mlx_service import mlx_service
-from ...config import settings
+from ...services.mlx_service import MLXService
+from ...core.dependencies import get_model_required
 
-router = APIRouter(prefix="/v1/chat", tags=["chat"])
-
-
-async def verify_model_loaded():
-    """Dependency to verify model is loaded."""
-    if not mlx_service.is_model_loaded():
-        raise HTTPException(
-            status_code=503,
-            detail="Model not loaded. Please load a model first."
-        )
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/v1/chat", tags=["Chat Completions"])
 
 
 @router.post(
     "/completions",
     response_model=ChatCompletionResponse,
+    summary="Create a chat completion",
+    description="Create a chat completion using the loaded MLX model",
     responses={
-        503: {"model": ErrorResponse},
-        422: {"model": ErrorResponse}
+        200: {"description": "Successful completion", "model": ChatCompletionResponse},
+        422: {"description": "Validation error", "model": ErrorResponse},
+        503: {"description": "Model not loaded", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
     }
 )
 async def create_chat_completion(
     request: ChatCompletionRequest,
-    _: bool = Depends(verify_model_loaded)
+    mlx_service: MLXService = Depends(get_model_required)
 ) -> ChatCompletionResponse:
-    """Create a chat completion."""
+    """Create a chat completion using the loaded MLX model."""
     try:
+        logger.info(f"Processing chat completion request for model: {request.model}")
         response = await mlx_service.generate_completion(
             messages=request.messages,
             max_tokens=request.max_tokens,
-            temperature=request.temperature
+            temperature=request.temperature,
+            model=request.model
         )
+        logger.info(f"Successfully generated completion with ID: {response.id}")
         return response
-    except Exception as e:
+    except RuntimeError as e:
+        logger.error(f"Runtime error during completion: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Error generating completion: {str(e)}"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=ErrorDetail(
+                type="model_error",
+                message=str(e),
+                code="MODEL_RUNTIME_ERROR"
+            ).model_dump()
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during completion: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(
+                type="internal_error",
+                message="An unexpected error occurred while generating completion",
+                code="COMPLETION_ERROR"
+            ).model_dump()
         )
 
 
 @router.post(
     "/completions/stream",
+    summary="Create a streaming chat completion",
+    description="Create a streaming chat completion (not yet implemented)",
     responses={
-        503: {"model": ErrorResponse},
-        422: {"model": ErrorResponse}
+        501: {"description": "Not implemented", "model": ErrorResponse},
+        503: {"description": "Model not loaded", "model": ErrorResponse}
     }
 )
 async def create_chat_completion_stream(
     request: ChatCompletionRequest,
-    _: bool = Depends(verify_model_loaded)
+    mlx_service: MLXService = Depends(get_model_required)
 ):
-    """Create a streaming chat completion."""
-    # TODO: Implement streaming response
+    """Create a streaming chat completion (not yet implemented)."""
+    del request, mlx_service  # Avoid unused variable warnings
+    logger.warning("Streaming completion requested but not yet implemented")
     raise HTTPException(
-        status_code=501,
-        detail="Streaming not yet implemented"
-    ) 
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=ErrorDetail(
+            type="not_implemented",
+            message="Streaming completions are not yet implemented",
+            code="STREAMING_NOT_IMPLEMENTED"
+        ).model_dump()
+    )

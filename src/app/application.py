@@ -30,20 +30,43 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
     
-    # Load model if configured
-    if settings.llm_model_directory and settings.llm_model_name:
-        model_path = os.path.join(settings.llm_model_directory, settings.llm_model_name)
-        logger.info(f"Loading model from: {model_path}")
-        try:
-            success = await mlx_service.load_model(model_path, settings.llm_model_name)
-            if success:
-                logger.info("Model loaded successfully")
+    # Initialize model directory and discover models
+    if settings.llm_model_directory:
+        logger.info(f"Setting model directory: {settings.llm_model_directory}")
+        mlx_service.set_model_directory(settings.llm_model_directory)
+        
+        # Load default model if specified
+        if settings.llm_model_name:
+            logger.info(f"Loading default model: {settings.llm_model_name}")
+            try:
+                success = await mlx_service.ensure_model_loaded(settings.llm_model_name)
+                if success:
+                    logger.info(f"Default model loaded successfully: {settings.llm_model_name}")
+                else:
+                    logger.warning(f"Failed to load default model: {settings.llm_model_name}")
+            except Exception as e:
+                logger.error(f"Error loading default model: {e}")
+        else:
+            # Load first available model as default
+            default_model = mlx_service.get_default_model()
+            if default_model:
+                logger.info(f"Loading first available model as default: {default_model}")
+                try:
+                    success = await mlx_service.ensure_model_loaded(default_model)
+                    if success:
+                        logger.info(f"Default model loaded successfully: {default_model}")
+                    else:
+                        logger.warning(f"Failed to load default model: {default_model}")
+                except Exception as e:
+                    logger.error(f"Error loading default model: {e}")
             else:
-                logger.warning("Failed to load model during startup")
-        except Exception as e:
-            logger.error(f"Error loading model during startup: {e}")
+                logger.info("No models found in model directory")
+        
+        # Log available models
+        available_models = mlx_service.get_available_models()
+        logger.info(f"Available models: {list(available_models.keys())}")
     else:
-        logger.info("No model configured for auto-loading")
+        logger.info("No model directory configured - models can be loaded dynamically")
     
     yield  # Application runs here
     

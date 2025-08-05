@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     
     # MLX Settings
     llm_model_directory: Optional[str] = Field(default=None, description="Path to MLX model directory")
-    llm_model_name: Optional[str] = Field(default=None, description="MLX model name")
+    llm_model_name: Optional[str] = Field(default=None, description="Default MLX model name (optional)")
     llm_model_max_tokens: int = Field(default=1000, ge=1, le=8192, description="Default max tokens")
     llm_model_temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Default temperature")
     

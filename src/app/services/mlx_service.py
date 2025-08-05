@@ -3,6 +3,8 @@ from typing import List, Optional, Dict, Any
 import time
 import uuid
 import logging
+import os
+from pathlib import Path
 from functools import lru_cache
 from ..models import ChatMessage, ChatCompletionResponse, ChatCompletionChoice, ChatCompletionUsage
 from ..config import get_settings
@@ -11,14 +13,114 @@ logger = logging.getLogger(__name__)
 
 
 class MLXService:
-    """Service for handling MLX model operations."""
+    """Service for handling MLX model operations with dynamic model management."""
     
     def __init__(self):
         self.model = None
         self.tokenizer = None
         self.model_loaded = False
-        self.model_path: Optional[str] = None
-        self.model_name: str = "mlx-model"
+        self.current_model_path: Optional[str] = None
+        self.current_model_name: Optional[str] = None
+        self.available_models: Dict[str, str] = {}  # model_name -> model_path
+        self.model_directory: Optional[str] = None
+        
+    def discover_models(self, model_directory: str) -> Dict[str, str]:
+        """Discover all available models in the specified directory."""
+        models = {}
+        
+        if not os.path.exists(model_directory):
+            logger.warning(f"Model directory does not exist: {model_directory}")
+            return models
+            
+        try:
+            model_dir_path = Path(model_directory)
+            logger.info(f"Discovering models in: {model_directory}")
+            
+            # Look for model directories or files
+            for item in model_dir_path.iterdir():
+                if item.is_dir():
+                    # Check if directory contains model files
+                    if self._is_model_directory(item):
+                        model_name = item.name
+                        models[model_name] = str(item)
+                        logger.debug(f"Found model directory: {model_name} -> {item}")
+                elif item.is_file() and item.suffix in ['.safetensors', '.bin', '.pth']:
+                    # Single model file
+                    model_name = item.stem
+                    models[model_name] = str(item)
+                    logger.debug(f"Found model file: {model_name} -> {item}")
+            
+            logger.info(f"Discovered {len(models)} models: {list(models.keys())}")
+            
+        except Exception as e:
+            logger.error(f"Error discovering models in {model_directory}: {e}")
+            
+        return models
+    
+    def _is_model_directory(self, path: Path) -> bool:
+        """Check if a directory contains MLX model files."""
+        files_in_dir = [f.name for f in path.iterdir() if f.is_file()]
+        
+        # Check for exact matches
+        for model_file in ['model.safetensors', 'weights.npz', 'config.json']:
+            if model_file in files_in_dir:
+                return True
+                
+        # Check for pattern matches (sharded models)
+        for file_in_dir in files_in_dir:
+            if (file_in_dir.startswith('model-') and 
+                (file_in_dir.endswith('.safetensors') or file_in_dir.endswith('.bin'))):
+                return True
+                
+        return False
+    
+    def set_model_directory(self, model_directory: str) -> None:
+        """Set the model directory and discover available models."""
+        self.model_directory = model_directory
+        self.available_models = self.discover_models(model_directory)
+        logger.info(f"Set model directory to {model_directory} with {len(self.available_models)} models")
+        
+    def get_available_models(self) -> Dict[str, str]:
+        """Get all available models."""
+        return self.available_models.copy()
+    
+    def get_default_model(self) -> Optional[str]:
+        """Get the default model name (first available model)."""
+        if not self.available_models:
+            return None
+        return next(iter(self.available_models.keys()))
+        
+    async def ensure_model_loaded(self, requested_model: str) -> bool:
+        """Ensure the requested model is loaded, switching if necessary."""
+        # If no model is requested, use current or default
+        if not requested_model:
+            if self.model_loaded:
+                return True
+            requested_model = self.get_default_model()
+            if not requested_model:
+                logger.error("No models available and no default model")
+                return False
+        
+        # If the requested model is already loaded, do nothing
+        if (self.model_loaded and 
+            self.current_model_name == requested_model):
+            logger.debug(f"Model {requested_model} is already loaded")
+            return True
+            
+        # Check if the requested model is available
+        if requested_model not in self.available_models:
+            logger.error(f"Requested model '{requested_model}' not found in available models: {list(self.available_models.keys())}")
+            return False
+            
+        # Unload current model if loaded
+        if self.model_loaded:
+            logger.info(f"Unloading current model: {self.current_model_name}")
+            self.unload_model()
+            
+        # Load the requested model
+        model_path = self.available_models[requested_model]
+        logger.info(f"Loading requested model: {requested_model} from {model_path}")
+        return await self.load_model(model_path, requested_model)
         
     async def load_model(self, model_path: str, model_name: Optional[str] = None) -> bool:
         """Load the MLX model."""
@@ -26,24 +128,26 @@ class MLXService:
             logger.info(f"Loading MLX model from: {model_path}")
             self.model, self.tokenizer = load(model_path)
             self.model_loaded = True
-            self.model_path = model_path
-            if model_name:
-                self.model_name = model_name
-            logger.info(f"Successfully loaded model: {self.model_name}")
+            self.current_model_path = model_path
+            self.current_model_name = model_name or os.path.basename(model_path)
+            logger.info(f"Successfully loaded model: {self.current_model_name}")
             return True
         except Exception as e:
             logger.error(f"Error loading model from {model_path}: {e}")
             self.model_loaded = False
-            self.model_path = None
+            self.current_model_path = None
+            self.current_model_name = None
             return False
     
     def unload_model(self) -> None:
         """Unload the current model."""
+        if self.model_loaded:
+            logger.info(f"Unloading model: {self.current_model_name}")
         self.model = None
         self.tokenizer = None
         self.model_loaded = False
-        self.model_path = None
-        logger.info("Model unloaded")
+        self.current_model_path = None
+        self.current_model_name = None
     
     def _format_messages(self, messages: List[ChatMessage]) -> str:
         """Format messages for the model using tokenizer's chat template if available."""
@@ -87,16 +191,23 @@ class MLXService:
         temperature: Optional[float] = None,
         model: Optional[str] = None
     ) -> ChatCompletionResponse:
-        """Generate a chat completion."""
+        """Generate a chat completion with dynamic model loading."""
+        # Ensure the requested model is loaded
+        requested_model = model or self.current_model_name or self.get_default_model()
+        
+        if not await self.ensure_model_loaded(requested_model):
+            available_models = list(self.available_models.keys()) if self.available_models else ["No models available"]
+            raise RuntimeError(f"Failed to load model '{requested_model}'. Available models: {available_models}")
+        
         if not self.model_loaded:
-            raise RuntimeError("Model not loaded")
+            raise RuntimeError("No model loaded after ensure_model_loaded")
         
         settings = get_settings()
         
         # Use provided parameters or fallback to settings
         max_tokens = max_tokens or settings.llm_model_max_tokens
         temperature = temperature or settings.llm_model_temperature
-        model_name = model or self.model_name
+        model_name = requested_model or self.current_model_name
         
         # Format messages
         prompt = self._format_messages(messages)
@@ -199,11 +310,14 @@ class MLXService:
         return self.model_loaded
     
     def get_model_info(self) -> Dict[str, Any]:
-        """Get information about the loaded model."""
+        """Get information about the current model and available models."""
         return {
             "model_loaded": self.model_loaded,
-            "model_path": self.model_path,
-            "model_name": self.model_name
+            "current_model_path": self.current_model_path,
+            "current_model_name": self.current_model_name,
+            "model_directory": self.model_directory,
+            "available_models": list(self.available_models.keys()),
+            "total_available_models": len(self.available_models)
         }
 
 

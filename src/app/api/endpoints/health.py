@@ -128,7 +128,7 @@ async def unload_model(
     "/models",
     response_model=ModelListResponse,
     summary="List available models",
-    description="List all available models",
+    description="List all available models in the model directory",
     responses={
         200: {"description": "List of models", "model": ModelListResponse}
     }
@@ -136,31 +136,87 @@ async def unload_model(
 async def list_models(
     mlx_service: MLXService = Depends(get_mlx_service_dependency)
 ) -> ModelListResponse:
-    """List available models."""
+    """List all available models."""
     models = []
+    available_models = mlx_service.get_available_models()
+    current_time = int(time.time())
     
-    if mlx_service.is_model_loaded():
-        model_info = mlx_service.get_model_info()
-        models.append(
-            ModelInfo(
-                id=model_info["model_name"],
-                object="model",
-                created=int(time.time()),
-                owned_by="mlx-llm-api"
+    if available_models:
+        for model_name in available_models.keys():
+            models.append(
+                ModelInfo(
+                    id=model_name,
+                    object="model",
+                    created=current_time,
+                    owned_by="mlx-llm-api"
+                )
             )
-        )
     else:
-        # Default model entry when no model is loaded
-        models.append(
-            ModelInfo(
-                id="mlx-model",
-                object="model",
-                created=int(time.time()),
-                owned_by="mlx-llm-api"
-            )
-        )
+        # No models available
+        logger.warning("No models available in model directory")
     
     return ModelListResponse(
         object="list",
         data=models
     )
+
+
+@router.post(
+    "/switch-model",
+    summary="Switch to a different model",
+    description="Switch to a different available model",
+    responses={
+        200: {"description": "Model switched successfully"},
+        400: {"description": "Invalid model or model not available", "model": ErrorResponse},
+        500: {"description": "Failed to switch model", "model": ErrorResponse}
+    }
+)
+async def switch_model(
+    model_name: str,
+    mlx_service: MLXService = Depends(get_mlx_service_dependency)
+):
+    """Switch to a different model."""
+    available_models = mlx_service.get_available_models()
+    
+    if model_name not in available_models:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorDetail(
+                type="invalid_model",
+                message=f"Model '{model_name}' not found",
+                code="MODEL_NOT_FOUND",
+                details={"available_models": list(available_models.keys())}
+            ).model_dump()
+        )
+    
+    try:
+        logger.info(f"Switching to model: {model_name}")
+        success = await mlx_service.ensure_model_loaded(model_name)
+        
+        if success:
+            logger.info(f"Successfully switched to model: {model_name}")
+            return {
+                "message": f"Successfully switched to model: {model_name}",
+                "current_model": model_name,
+                "available_models": list(available_models.keys())
+            }
+        else:
+            logger.error(f"Failed to switch to model: {model_name}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=ErrorDetail(
+                    type="model_switch_error",
+                    message=f"Failed to switch to model: {model_name}",
+                    code="MODEL_SWITCH_FAILED"
+                ).model_dump()
+            )
+    except Exception as e:
+        logger.error(f"Error switching to model {model_name}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorDetail(
+                type="model_switch_error",
+                message=f"Error switching to model: {str(e)}",
+                code="MODEL_SWITCH_ERROR"
+            ).model_dump()
+        )

@@ -4,4 +4,10 @@ version = "0.1.0"
 description = "OpenAI compatible API for MLX-LM"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.116.1",
+    "mlx>=0.27.1",
+    "mlx-lm>=0.26.2",
+    "pydantic-settings>=2.10.1",
+    "uvicorn>=0.35.0",
+]

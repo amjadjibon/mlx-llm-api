@@ -15,6 +15,15 @@ from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Import mlx-embeddings with error handling
+try:
+    from mlx_embeddings.utils import load as load_embedding_model
+    MLX_EMBEDDINGS_AVAILABLE = True
+    logger.info("mlx-embeddings library is available")
+except ImportError:
+    MLX_EMBEDDINGS_AVAILABLE = False
+    logger.warning("mlx-embeddings not available. Embeddings will use placeholder implementation.")
+
 
 class MLXService:
     """Service for handling MLX model operations with dynamic model management."""
@@ -27,6 +36,13 @@ class MLXService:
         self.current_model_name: Optional[str] = None
         self.available_models: Dict[str, str] = {}  # model_name -> model_path
         self.model_directory: Optional[str] = None
+        
+        # Separate embedding model handling
+        self.embedding_model = None
+        self.embedding_tokenizer = None
+        self.embedding_model_loaded = False
+        self.current_embedding_model_path: Optional[str] = None
+        self.current_embedding_model_name: Optional[str] = None
         
     def discover_models(self, model_directory: str) -> Dict[str, str]:
         """Discover all available models in the specified directory and subdirectories."""
@@ -202,6 +218,64 @@ class MLXService:
         model_path = self.available_models[requested_model]
         logger.info(f"Loading requested model: {requested_model} from {model_path}")
         return await self.load_model(model_path, requested_model)
+    
+    async def load_embedding_model(self, model_path: str, model_name: Optional[str] = None) -> bool:
+        """Load an embedding model specifically."""
+        if not MLX_EMBEDDINGS_AVAILABLE:
+            logger.warning("Cannot load embedding model: mlx-embeddings not available")
+            return False
+            
+        try:
+            logger.info(f"Loading MLX embedding model from: {model_path}")
+            self.embedding_model, self.embedding_tokenizer = load_embedding_model(model_path)
+            self.embedding_model_loaded = True
+            self.current_embedding_model_path = model_path
+            self.current_embedding_model_name = model_name or os.path.basename(model_path)
+            logger.info(f"Successfully loaded embedding model: {self.current_embedding_model_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error loading embedding model from {model_path}: {e}")
+            self.embedding_model_loaded = False
+            self.current_embedding_model_path = None
+            self.current_embedding_model_name = None
+            return False
+    
+    def unload_embedding_model(self) -> None:
+        """Unload the current embedding model."""
+        if self.embedding_model_loaded:
+            logger.info(f"Unloading embedding model: {self.current_embedding_model_name}")
+        self.embedding_model = None
+        self.embedding_tokenizer = None
+        self.embedding_model_loaded = False
+        self.current_embedding_model_path = None
+        self.current_embedding_model_name = None
+        
+    async def ensure_embedding_model_loaded(self, requested_model: str) -> bool:
+        """Ensure the requested embedding model is loaded."""
+        # If the requested model is already loaded as embedding model, do nothing
+        if (self.embedding_model_loaded and 
+            self.current_embedding_model_name == requested_model):
+            logger.debug(f"Embedding model {requested_model} is already loaded")
+            return True
+            
+        # Check if the requested model is available
+        if requested_model not in self.available_models:
+            logger.error(f"Requested embedding model '{requested_model}' not found in available models")
+            return False
+            
+        # Check if this model is suitable for embeddings
+        if not self.is_embedding_model(requested_model):
+            logger.warning(f"Model '{requested_model}' may not be optimized for embeddings")
+            
+        # Unload current embedding model if loaded
+        if self.embedding_model_loaded:
+            logger.info(f"Unloading current embedding model: {self.current_embedding_model_name}")
+            self.unload_embedding_model()
+            
+        # Load the requested embedding model
+        model_path = self.available_models[requested_model]
+        logger.info(f"Loading requested embedding model: {requested_model} from {model_path}")
+        return await self.load_embedding_model(model_path, requested_model)
         
     async def load_model(self, model_path: str, model_name: Optional[str] = None) -> bool:
         """Load the MLX model."""
@@ -512,23 +586,101 @@ class MLXService:
         input_texts: List[str],
         model: Optional[str] = None
     ) -> EmbeddingResponse:
-        """Generate embeddings for input texts."""
-        # Note: This is a placeholder implementation
-        # MLX-LM models are primarily for text generation, not embeddings
-        # For actual embeddings, you'd need specialized embedding models
+        """Generate embeddings for input texts using mlx-embeddings."""
+        # Determine the requested model
+        requested_model = model or self._get_best_embedding_model() or self.get_default_model()
         
-        # Ensure the requested model is loaded
-        requested_model = model or self.current_model_name or self.get_default_model()
+        if not requested_model:
+            raise RuntimeError("No embedding model available")
         
+        # Use mlx-embeddings if available and model is suitable for embeddings
+        if MLX_EMBEDDINGS_AVAILABLE and self.is_embedding_model(requested_model):
+            return await self._generate_embeddings_with_mlx(input_texts, requested_model)
+        else:
+            # Fall back to text generation model approach (placeholder)
+            return await self._generate_embeddings_fallback(input_texts, requested_model)
+    
+    async def _generate_embeddings_with_mlx(
+        self,
+        input_texts: List[str],
+        requested_model: str
+    ) -> EmbeddingResponse:
+        """Generate embeddings using mlx-embeddings library."""
+        # Ensure the embedding model is loaded
+        if not await self.ensure_embedding_model_loaded(requested_model):
+            available_models = list(self.available_models.keys()) if self.available_models else ["No models available"]
+            raise RuntimeError(f"Failed to load embedding model '{requested_model}'. Available models: {available_models}")
+        
+        if not self.embedding_model_loaded:
+            raise RuntimeError("No embedding model loaded after ensure_embedding_model_loaded")
+
+        logger.info(f"Generating embeddings for {len(input_texts)} texts using mlx-embeddings")
+        
+        try:
+            embeddings_data = []
+            total_tokens = 0
+            
+            for i, text in enumerate(input_texts):
+                # Encode text and get embeddings using mlx-embeddings
+                input_ids = self.embedding_tokenizer.encode(text, return_tensors="mlx")
+                
+                # Count tokens for usage tracking
+                total_tokens += len(input_ids)
+                
+                # Generate embeddings
+                outputs = self.embedding_model(input_ids)
+                
+                # Extract embedding vector (mean pooled and normalized)
+                if hasattr(outputs, 'text_embeds'):
+                    embedding = outputs.text_embeds.tolist()
+                elif hasattr(outputs, 'last_hidden_state'):
+                    # Mean pooling for models without text_embeds attribute
+                    embedding = outputs.last_hidden_state.mean(axis=1).tolist()
+                else:
+                    raise RuntimeError("Could not extract embeddings from model output")
+                
+                # Ensure embedding is a flat list
+                if isinstance(embedding[0], list):
+                    embedding = embedding[0]
+                
+                embeddings_data.append(
+                    EmbeddingData(
+                        object="embedding",
+                        embedding=embedding,
+                        index=i
+                    )
+                )
+            
+            logger.info(f"Successfully generated {len(embeddings_data)} embeddings")
+            
+            return EmbeddingResponse(
+                object="list",
+                data=embeddings_data,
+                model=requested_model,
+                usage=EmbeddingUsage(
+                    prompt_tokens=total_tokens,
+                    total_tokens=total_tokens
+                )
+            )
+            
+        except Exception as e:
+            logger.error(f"Error generating embeddings with mlx-embeddings: {e}")
+            raise RuntimeError(f"Failed to generate embeddings: {str(e)}")
+    
+    async def _generate_embeddings_fallback(
+        self,
+        input_texts: List[str],
+        requested_model: str
+    ) -> EmbeddingResponse:
+        """Fallback embedding generation using text generation models."""
+        # Ensure the text generation model is loaded
         if not await self.ensure_model_loaded(requested_model):
             available_models = list(self.available_models.keys()) if self.available_models else ["No models available"]
             raise RuntimeError(f"Failed to load model '{requested_model}'. Available models: {available_models}")
         
-        model_name = requested_model or self.current_model_name
+        logger.warning(f"Using fallback embedding generation for model: {requested_model}")
         
-        logger.warning("Embedding generation requested but not fully supported by MLX-LM text generation models")
-        
-        # Placeholder implementation - in reality you'd need proper embedding models
+        # Placeholder implementation for text generation models
         embeddings_data = []
         total_tokens = 0
         
@@ -537,11 +689,17 @@ class MLXService:
             tokens = self.tokenizer.encode(text)
             total_tokens += len(tokens)
             
-            # Generate a dummy embedding (in practice, use proper embedding model)
-            # This creates a random embedding vector for demonstration
-            import random
-            random.seed(hash(text) % (2**32))  # Deterministic based on text
-            embedding = [random.uniform(-1, 1) for _ in range(384)]  # Common embedding size
+            # Generate a deterministic embedding based on text content
+            import hashlib
+            text_hash = hashlib.sha256(text.encode()).hexdigest()
+            
+            # Create a deterministic embedding vector
+            embedding = []
+            for j in range(384):  # Standard embedding size
+                # Use hash to create deterministic values
+                hash_val = int(text_hash[(j*2) % len(text_hash):(j*2+2) % len(text_hash)], 16)
+                normalized_val = (hash_val / 255.0) * 2 - 1  # Normalize to [-1, 1]
+                embedding.append(normalized_val)
             
             embeddings_data.append(
                 EmbeddingData(
@@ -554,12 +712,19 @@ class MLXService:
         return EmbeddingResponse(
             object="list",
             data=embeddings_data,
-            model=model_name,
+            model=requested_model,
             usage=EmbeddingUsage(
                 prompt_tokens=total_tokens,
                 total_tokens=total_tokens
             )
         )
+    
+    def _get_best_embedding_model(self) -> Optional[str]:
+        """Get the best available embedding model."""
+        for model_name in self.available_models.keys():
+            if self.is_embedding_model(model_name):
+                return model_name
+        return None
     
     def is_embedding_model(self, model_name: str) -> bool:
         """Check if a model is designed for embeddings."""

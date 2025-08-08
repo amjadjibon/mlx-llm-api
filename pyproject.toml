@@ -30,4 +30,5 @@ kittentts = { url = "https://github.com/KittenML/KittenTTS/releases/download/0.1
 [dependency-groups]
 dev = [
     "ruff>=0.12.8",
+    "watchdog>=6.0.0",
 ]

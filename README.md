@@ -1,157 +1,128 @@
-# MLX LLM API
+# MLX-LM API
 
-A FastAPI-based OpenAI-compatible API for MLX-LM models.
+A production-ready OpenAI-compatible API server for Apple MLX models with full audio capabilities and Streamlit ChatGPT clone.
 
 ## Features
 
-- 🚀 FastAPI with Uvicorn server
-- 🏗️ Clean, modular architecture
-- 🔧 Configurable via environment variables
-- 📚 Auto-generated API documentation
-- 🏥 Health check endpoints
-- 🔒 CORS and security middleware
-- 📝 Comprehensive logging
-- 🎯 OpenAI-compatible chat completions
+- 🚀 **FastAPI Backend** - OpenAI-compatible endpoints
+- 🤖 **Streamlit ChatGPT Clone** - Full-featured chat interface
+- 🎵 **Audio Integration** - Speech-to-text and text-to-speech
+- 🏗️ **Clean Architecture** - Modular, scalable design
+- 🔧 **Dynamic Models** - Auto-discovery and switching
+- 📚 **Complete Documentation** - API docs and examples
+- 🏥 **Production Ready** - Health checks, logging, middleware
 
-## Architecture
+## Project Structure
 
 ```
-src/
-├── app/
-│   ├── api/                 # API layer
-│   │   ├── endpoints/       # Route handlers
-│   │   └── router.py        # Main API router
-│   ├── core/               # Core functionality
-│   │   ├── middleware.py   # Custom middleware
-│   │   └── exceptions.py   # Exception handlers
-│   ├── services/           # Business logic
-│   │   └── mlx_service.py  # MLX model operations
-│   ├── config.py           # Configuration management
-│   ├── models.py           # Pydantic models
-│   └── application.py      # FastAPI app factory
-└── main.py                 # Application entry point
+mlx-llm-api/
+├── backend/               # FastAPI backend
+│   ├── app/               # Core application
+│   │   ├── api/endpoints/ # Individual API endpoints
+│   │   ├── core/          # Core functionality
+│   │   ├── services/      # Business logic
+│   │   └── ...            # Config, models, etc.
+│   └── main.py            # Backend entry point
+├── streamlit_app.py       # ChatGPT clone
+├── frontend/              # Additional frontend
+└── ...                    # Config and docs
 ```
 
 ## Quick Start
 
 ### 1. Install Dependencies
-
 ```bash
 # Using uv (recommended)
 uv sync
 
 # Or using pip
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### 2. Configure Environment
-
-Copy the example environment file and configure it:
-
 ```bash
 cp env.example .env
+# Edit .env with your model directory path
 ```
 
-Edit `.env` with your settings:
-
-```env
-MODEL_PATH=/path/to/your/mlx/model
-HOST=0.0.0.0
-PORT=8000
-```
-
-### 3. Run the Application
-
+### 3. Start Backend API
 ```bash
-# Development mode
-python src/main.py
-
-# Or using uvicorn directly
-uvicorn src.app.application:app --host 0.0.0.0 --port 8000 --reload
+cd backend && python main.py
 ```
 
-### 4. Access the API
+### 4. Launch Streamlit App (Optional)
+```bash
+streamlit run streamlit_app.py
+```
 
-- **API Documentation**: http://localhost:8000/docs
+## Access Points
+
+- **API Server**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs (development only)
+- **Streamlit App**: http://localhost:8501
 - **Health Check**: http://localhost:8000/api/health
-- **Root Endpoint**: http://localhost:8000/
 
-## API Endpoints
+## OpenAI-Compatible Endpoints
 
-### Health & Management
+### Core API
+- **Chat Completions**: `POST /v1/chat/completions`
+- **Text Completions**: `POST /v1/completions`
+- **Embeddings**: `POST /v1/embeddings`
+- **Models**: `GET /v1/models`, `GET /v1/models/{id}`
 
-- `GET /api/health` - Health check
-- `POST /api/load-model` - Load a model
-- `GET /api/models` - List available models
+### Audio API
+- **Transcriptions**: `POST /v1/audio/transcriptions`
+- **Translations**: `POST /v1/audio/translations`
+- **Text-to-Speech**: `POST /v1/audio/speech`
 
-### Chat Completions
+### Management
+- **Health Check**: `GET /api/health`
+- **Model Management**: `POST /api/load-model`, `GET /api/models`
 
-- `POST /api/v1/chat/completions` - Create chat completion
-- `POST /api/v1/chat/completions/stream` - Streaming chat completion (TODO)
-
-### Example Chat Completion Request
+## Example Usage
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/chat/completions" \
+# Chat with your MLX model
+curl -X POST "http://localhost:8000/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "mlx-model",
-    "messages": [
-      {"role": "user", "content": "Hello, how are you?"}
-    ],
-    "max_tokens": 100,
-    "temperature": 0.7
+    "model": "your-mlx-model",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 100
   }'
+
+# Transcribe audio
+curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
+  -F "file=@audio.mp3" \
+  -F "model=whisper-large-v3"
+
+# Generate speech
+curl -X POST "http://localhost:8000/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "kitten-tts-nano", "input": "Hello world!", "voice": "expr-voice-2-f"}' \
+  --output speech.wav
 ```
 
-## Configuration
+## Streamlit ChatGPT Clone
 
-The application can be configured using environment variables:
+The included Streamlit app provides a complete ChatGPT alternative with:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `APP_NAME` | "MLX LLM API" | Application name |
-| `APP_VERSION` | "0.1.0" | Application version |
-| `DEBUG` | false | Debug mode |
-| `HOST` | "0.0.0.0" | Server host |
-| `PORT` | 8000 | Server port |
-| `RELOAD` | false | Auto-reload on changes |
-| `MODEL_PATH` | None | Path to MLX model |
-| `MAX_TOKENS` | 1000 | Default max tokens |
-| `TEMPERATURE` | 0.7 | Default temperature |
+- 💬 **Real-time chat** with your MLX models
+- 🎤 **Voice recording** and transcription
+- 🔊 **Text-to-speech** responses
+- ⚙️ **Model selection** and parameter control
+- 💾 **Chat export** and history management
 
-## Development
+Launch with: `streamlit run streamlit_app.py`
 
-### Project Structure
+## Documentation
 
-- **Layered Architecture**: Separation of concerns with API, services, and core layers
-- **Dependency Injection**: Services are injected where needed
-- **Error Handling**: Centralized exception handling
-- **Logging**: Structured logging with middleware
-- **Configuration**: Environment-based configuration with Pydantic
-
-### Adding New Endpoints
-
-1. Create a new file in `src/app/api/endpoints/`
-2. Define your router with endpoints
-3. Include the router in `src/app/api/router.py`
-
-### Adding New Services
-
-1. Create a new file in `src/app/services/`
-2. Implement your service logic
-3. Import and use in your endpoints
-
-## Production Deployment
-
-For production deployment:
-
-1. Set `DEBUG=false`
-2. Configure proper CORS origins
-3. Set trusted hosts
-4. Use a production WSGI server
-5. Configure proper logging
-6. Set up monitoring and health checks
+See [CLAUDE.md](CLAUDE.md) for complete documentation including:
+- Detailed API examples in Python, JavaScript, and cURL
+- Architecture overview and design decisions
+- OpenAI library compatibility guide
+- Audio features and configuration
+- Production deployment guidelines
 
 ## License
 

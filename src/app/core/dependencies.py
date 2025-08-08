@@ -15,7 +15,7 @@ def get_mlx_service_dependency() -> MLXService:
 
 
 async def verify_model_loaded(
-    mlx_service: MLXService = Depends(get_mlx_service_dependency)
+    mlx_service: MLXService = Depends(get_mlx_service_dependency),
 ) -> MLXService:
     """Dependency to verify model is loaded."""
     if not mlx_service.is_model_loaded():
@@ -24,14 +24,14 @@ async def verify_model_loaded(
             detail=ErrorDetail(
                 type="model_not_loaded",
                 message="Model not loaded. Please load a model first.",
-                code="MODEL_NOT_LOADED"
-            ).model_dump()
+                code="MODEL_NOT_LOADED",
+            ).model_dump(),
         )
     return mlx_service
 
 
 async def get_model_required(
-    mlx_service: MLXService = Depends(verify_model_loaded)
+    mlx_service: MLXService = Depends(verify_model_loaded),
 ) -> MLXService:
     """Alias for verify_model_loaded for cleaner endpoint definitions."""
     return mlx_service

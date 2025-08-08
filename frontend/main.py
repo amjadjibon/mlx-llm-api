@@ -134,36 +134,9 @@ with st.sidebar:
     ]
     selected_voice = st.selectbox("TTS Voice", voice_options)
 
-    # Audio input
-    st.write("Record audio message:")
-    audio_bytes = audio_recorder(
-        text="Click to record",
-        recording_color="#e8b62c",
-        neutral_color="#6aa36f",
-        icon_name="microphone",
-        icon_size="2x",
-    )
-
-    if audio_bytes and st.session_state.client:
-        st.audio(audio_bytes, format="audio/wav")
-        if st.button("🎤 Transcribe & Send"):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-                tmp_file.write(audio_bytes)
-                tmp_file.flush()
-
-                with open(tmp_file.name, "rb") as audio_file:
-                    transcribed_text = transcribe_audio(
-                        st.session_state.client, audio_file
-                    )
-
-                os.unlink(tmp_file.name)
-
-                if transcribed_text:
-                    # Add transcribed message to chat
-                    st.session_state.messages.append(
-                        {"role": "user", "content": transcribed_text, "type": "audio"}
-                    )
-                    st.rerun()
+    # Voice settings
+    st.write("🎤 Voice input available in chat below")
+    st.caption("Click the microphone button next to the message input")
 
     st.markdown("---")
 
@@ -226,14 +199,27 @@ with chat_container:
                                 if audio_data:
                                     st.audio(audio_data, format="audio/wav")
 
-# Chat input
-if prompt := st.chat_input("Type your message here..."):
+# Initialize recording state
+if "is_recording" not in st.session_state:
+    st.session_state.is_recording = False
+if "recorded_audio" not in st.session_state:
+    st.session_state.recorded_audio = None
+
+# Custom chat input with voice button
+def process_user_input(user_input: str, input_type: str = "text"):
+    """Process user input and generate assistant response."""
     # Add user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append({
+        "role": "user", 
+        "content": user_input,
+        "type": input_type
+    })
 
     # Display user message immediately
     with st.chat_message("user"):
-        st.write(prompt)
+        st.write(user_input)
+        if input_type == "audio":
+            st.caption("🎤 Transcribed from voice")
 
     # Generate assistant response
     with st.chat_message("assistant"):
@@ -278,6 +264,78 @@ if prompt := st.chat_input("Type your message here..."):
         except Exception as e:
             st.error(f"Error generating response: {e}")
 
+# Custom chat input area with voice button - ChatGPT style
+st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
+
+# Create a ChatGPT-like input container
+input_container = st.container()
+with input_container:
+    # Create columns for the ChatGPT-like layout: [text input | voice | send]
+    col1, col2, col3 = st.columns([8, 1, 1], gap="small")
+    
+    with col1:
+        # Text input with ChatGPT styling
+        user_input = st.text_input(
+            label="Message",
+            placeholder="Send a message...",
+            key="chat_input",
+            label_visibility="collapsed",
+            help="Type your message here or use voice input"
+        )
+    
+    with col2:
+        # Voice recording button - compact version
+        audio_bytes = audio_recorder(
+            text="",
+            recording_color="#ff4b4b",
+            neutral_color="#f0f2f6",
+            icon_name="microphone",
+            icon_size="1x",
+            key="voice_input"
+        )
+        
+        # Process recorded audio immediately
+        if audio_bytes and st.session_state.client:
+            with st.spinner("🎤 Transcribing..."):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+                    tmp_file.write(audio_bytes)
+                    tmp_file.flush()
+
+                    with open(tmp_file.name, "rb") as audio_file:
+                        transcribed_text = transcribe_audio(st.session_state.client, audio_file)
+
+                    os.unlink(tmp_file.name)
+
+                    if transcribed_text:
+                        # Process voice input
+                        process_user_input(transcribed_text, "audio")
+                        st.rerun()
+    
+    with col3:
+        # Send button with improved styling
+        send_button = st.button(
+            "⬆", 
+            key="send_button", 
+            help="Send message (Enter)",
+            disabled=not user_input.strip() if user_input else True
+        )
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Process text input when send button is clicked or Enter is pressed
+if user_input and user_input.strip():  # Only process non-empty messages
+    if send_button:  # Send button clicked
+        process_user_input(user_input.strip(), "text")
+        # Clear the input by rerunning the app
+        st.session_state.chat_input = ""  # Clear the input field
+        st.rerun()
+    elif user_input != st.session_state.get("last_input", ""):  # Enter key pressed
+        st.session_state.last_input = user_input
+        process_user_input(user_input.strip(), "text")
+        # Clear the input by rerunning the app
+        st.session_state.chat_input = ""  # Clear the input field  
+        st.rerun()
+
 # Footer
 st.markdown("---")
 st.markdown(
@@ -290,7 +348,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Add some custom CSS
+# Add enhanced CSS for ChatGPT-like interface
 st.markdown(
     """
 <style>
@@ -298,9 +356,65 @@ st.markdown(
         max-width: 1200px;
     }
     
+    /* Chat input styling */
+    .stTextInput > div > div > input {
+        background-color: #f7f7f8;
+        border: 1px solid #d9d9e3;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 16px;
+        transition: all 0.2s ease;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #10a37f;
+        box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.1);
+        outline: none;
+    }
+    
+    /* Send button styling - ChatGPT style */
+    .stButton > button[key="send_button"] {
+        background-color: #000000;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        width: 32px;
+        height: 32px;
+        margin-top: 8px;
+        font-size: 16px;
+        font-weight: bold;
+        transition: all 0.2s ease;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+    
+    .stButton > button[key="send_button"]:hover:not(:disabled) {
+        background-color: #2d2d2d;
+        transform: scale(1.05);
+    }
+    
+    .stButton > button[key="send_button"]:disabled {
+        background-color: #e5e5e5;
+        color: #9ca3af;
+        cursor: not-allowed;
+        transform: none;
+    }
+    
+    /* Voice button container */
+    .audio-recorder-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 8px;
+    }
+    
+    /* Chat messages styling */
     .chat-message {
         padding: 1rem;
-        border-radius: 0.5rem;
+        border-radius: 0.75rem;
         margin-bottom: 1rem;
         border: 1px solid #e0e0e0;
     }
@@ -312,22 +426,70 @@ st.markdown(
     
     .assistant-message {
         background-color: #f8f8f8;
-        border-left: 4px solid #28a745;
+        border-left: 4px solid #10a37f;
     }
     
+    /* General button styling */
     .stButton button {
-        border-radius: 20px;
+        border-radius: 8px;
         transition: all 0.3s ease;
+        font-weight: 500;
     }
     
     .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
     
+    /* TTS button styling */
+    .stButton > button[key*="tts_"] {
+        background-color: #f0f2f6;
+        color: #374151;
+        border: 1px solid #d1d5db;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        font-size: 14px;
+    }
+    
+    .stButton > button[key*="tts_"]:hover {
+        background-color: #e5e7eb;
+        color: #10a37f;
+    }
+    
+    /* Sidebar styling */
     .sidebar .stSelectbox label {
         font-weight: bold;
-        color: #333;
+        color: #374151;
+    }
+    
+    /* Input container */
+    .chat-input-container {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        padding: 20px 0;
+        border-top: 1px solid #e5e7eb;
+        margin-top: 20px;
+    }
+    
+    /* Voice button specific styling */
+    div[data-testid="stAudioRecorder"] > div {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 8px;
+    }
+    
+    /* Improve text input width */
+    .stTextInput {
+        width: 100%;
+    }
+    
+    /* Chat container styling */
+    .main-chat-container {
+        padding-bottom: 100px;
     }
 </style>
 """,

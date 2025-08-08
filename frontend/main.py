@@ -51,7 +51,7 @@ def transcribe_audio(client: openai.OpenAI, audio_file) -> str:
     """Transcribe audio using the API."""
     try:
         response = client.audio.transcriptions.create(
-            model="whisper-large-v3", file=audio_file, response_format="json"
+            model="mlx-community/whisper-large-v3-mlx", file=audio_file, response_format="json"
         )
         return response.text
     except Exception as e:

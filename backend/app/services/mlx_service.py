@@ -60,22 +60,25 @@ class MLXService:
         """Discover all available models in the specified directory and subdirectories."""
         models = {}
 
-        if not os.path.exists(model_directory):
-            logger.warning(f"Model directory does not exist: {model_directory}")
-            return models
+        # Support multiple directories separated by colon (Unix-style)
+        directories = [d.strip() for d in model_directory.split(':') if d.strip()]
+        
+        for directory in directories:
+            if not os.path.exists(directory):
+                logger.warning(f"Model directory does not exist: {directory}")
+                continue
 
-        try:
-            model_dir_path = Path(model_directory)
-            logger.info(f"Discovering models in: {model_directory}")
+            try:
+                model_dir_path = Path(directory)
+                logger.info(f"Discovering models in: {directory}")
 
-            # Look for models in the main directory and subdirectories
-            self._scan_directory_for_models(model_dir_path, models)
+                # Look for models in the main directory and subdirectories
+                self._scan_directory_for_models(model_dir_path, models)
 
-            logger.info(f"Discovered {len(models)} models: {list(models.keys())}")
+            except Exception as e:
+                logger.error(f"Error discovering models in {directory}: {e}")
 
-        except Exception as e:
-            logger.error(f"Error discovering models in {model_directory}: {e}")
-
+        logger.info(f"Discovered {len(models)} models total: {list(models.keys())}")
         return models
 
     def _scan_directory_for_models(
@@ -877,7 +880,7 @@ class MLXService:
     async def transcribe_audio(
         self,
         audio_data: bytes,
-        model_name: str = "whisper-large-v3",
+        model_name: str = "mlx-community/whisper-large-v3-mlx",
         language: Optional[str] = None,
         prompt: Optional[str] = None,
         temperature: float = 0.0,
@@ -898,10 +901,13 @@ class MLXService:
                 temp_audio_path = temp_audio.name
 
             try:
+                # Resolve model path (local first, then HF)
+                model_path = self._resolve_audio_model_path(model_name)
+                
                 # Transcribe using mlx-whisper
                 result = mlx_whisper.transcribe(
                     temp_audio_path,
-                    path_or_hf_repo=model_name,
+                    path_or_hf_repo=model_path,
                     language=language,
                     initial_prompt=prompt,
                     temperature=temperature,
@@ -928,7 +934,7 @@ class MLXService:
     async def translate_audio(
         self,
         audio_data: bytes,
-        model_name: str = "whisper-large-v3",
+        model_name: str = "mlx-community/whisper-large-v3-mlx",
         prompt: Optional[str] = None,
         temperature: float = 0.0,
         response_format: str = "json",
@@ -948,10 +954,13 @@ class MLXService:
                 temp_audio_path = temp_audio.name
 
             try:
+                # Resolve model path (local first, then HF)
+                model_path = os.path.join(get_settings().llm_model_directory, model_name)
+                
                 # Translate using mlx-whisper (task='translate')
                 result = mlx_whisper.transcribe(
                     temp_audio_path,
-                    path_or_hf_repo=model_name,
+                    path_or_hf_repo=model_path,
                     task="translate",  # Force translation to English
                     initial_prompt=prompt,
                     temperature=temperature,
@@ -1054,6 +1063,30 @@ class MLXService:
         audio_indicators = ["whisper", "audio", "speech", "asr", "stt", "tts"]
         model_lower = model_name.lower()
         return any(indicator in model_lower for indicator in audio_indicators)
+    
+    def _resolve_audio_model_path(self, model_name: str) -> str:
+        """Resolve audio model path, using mlx-community/whisper-large-v3-mlx directly."""
+        # For any whisper model request, use the local mlx-community/whisper-large-v3-mlx
+        if 'whisper' in model_name.lower():
+            whisper_model = "mlx-community/whisper-large-v3-mlx"
+            if whisper_model in self.available_models:
+                local_path = self.available_models[whisper_model]
+                logger.info(f"Using local whisper model: {local_path}")
+                return local_path
+            else:
+                logger.warning(f"Whisper model not found in available models: {list(self.available_models.keys())}")
+                # Fall back to the exact model name you have
+                return whisper_model
+        
+        # For non-whisper audio models, check if available locally
+        if model_name in self.available_models:
+            local_path = self.available_models[model_name]
+            logger.info(f"Using local audio model: {local_path}")
+            return local_path
+        
+        # If no local model found, use the original model_name for HF download
+        logger.info(f"No local audio model found for '{model_name}', will attempt HF download")
+        return model_name
 
 
 @lru_cache()

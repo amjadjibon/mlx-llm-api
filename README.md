@@ -39,20 +39,37 @@ uv sync
 pip install -e .
 ```
 
-### 2. Configure Environment
+### 2. Download Models
+```bash
+# Install huggingface-hub
+pip install huggingface-hub
+
+# Create models directory
+mkdir -p models
+
+# Download a recommended model
+huggingface-cli download mlx-community/Qwen2.5-7B-Instruct-4bit --local-dir models/Qwen2.5-7B-Instruct-4bit
+
+# Download an embedding model
+huggingface-cli download mlx-community/all-MiniLM-L6-v2-4bit --local-dir models/all-MiniLM-L6-v2-4bit
+```
+
+### 3. Configure Environment
 ```bash
 cp env.example .env
 # Edit .env with your model directory path
+echo "LLM_MODEL_DIRECTORY=./models" >> .env
 ```
 
-### 3. Start Backend API
+### 4. Start Backend API
 ```bash
-cd backend && python main.py
+python backend/main.py
 ```
 
-### 4. Launch Streamlit App (Optional)
+### 5. Launch Frontend App (Optional)
 ```bash
-streamlit run streamlit_app.py
+streamlit run frontend/main.py
+# or: streamlit run streamlit_app.py
 ```
 
 ## Access Points

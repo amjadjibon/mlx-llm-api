@@ -1,17 +1,19 @@
-from fastapi import APIRouter, HTTPException, Depends, status, File, UploadFile, Form
-from fastapi.responses import Response
 import logging
-from typing import Union, Optional
+from typing import Optional, Union
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import Response
+
+from ...core.dependencies import get_mlx_service_dependency
 from ...models import (
+    AudioSpeechRequest,
     AudioTranscriptionResponse,
     AudioTranslationResponse,
-    AudioSpeechRequest,
     AudioVerboseResponse,
-    ErrorResponse,
     ErrorDetail,
+    ErrorResponse,
 )
 from ...services.mlx_service import MLXService
-from ...core.dependencies import get_mlx_service_dependency
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["OpenAI Audio"])

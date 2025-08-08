@@ -1,10 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from .config import get_settings
+
 from .api.router import api_router
-from .core.middleware import setup_middleware
+from .config import get_settings
 from .core.exceptions import setup_exception_handlers
+from .core.middleware import setup_middleware
 from .services.mlx_service import get_mlx_service
 
 

@@ -1,24 +1,26 @@
-from mlx_lm import load, generate
-from typing import List, Optional, Dict, Any
-import time
-import uuid
 import logging
 import os
-from pathlib import Path
+import time
+import uuid
 from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from mlx_lm import generate, load
+
+from ..config import get_settings
 from ..models import (
-    ChatMessage,
-    ChatCompletionResponse,
     ChatCompletionChoice,
+    ChatCompletionResponse,
     ChatCompletionUsage,
-    CompletionResponse,
+    ChatMessage,
     CompletionChoice,
+    CompletionResponse,
     CompletionUsage,
-    EmbeddingResponse,
     EmbeddingData,
+    EmbeddingResponse,
     EmbeddingUsage,
 )
-from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -883,9 +885,10 @@ class MLXService:
     ) -> Dict[str, Any]:
         """Transcribe audio using mlx-whisper."""
         try:
-            import mlx_whisper
-            import tempfile
             import os
+            import tempfile
+
+            import mlx_whisper
 
             logger.info(f"Starting audio transcription with model: {model_name}")
 
@@ -932,9 +935,10 @@ class MLXService:
     ) -> Dict[str, Any]:
         """Translate audio to English using mlx-whisper."""
         try:
-            import mlx_whisper
-            import tempfile
             import os
+            import tempfile
+
+            import mlx_whisper
 
             logger.info(f"Starting audio translation with model: {model_name}")
 
@@ -978,9 +982,10 @@ class MLXService:
     ) -> bytes:
         """Generate speech from text using KittenTTS."""
         try:
-            from kittentts import KittenTTS
-            import soundfile as sf
             import io
+
+            import soundfile as sf
+            from kittentts import KittenTTS
 
             logger.info(f"Starting TTS generation with voice: {voice}")
 
@@ -1012,8 +1017,9 @@ class MLXService:
             elif response_format.lower() == "mp3":
                 # Convert to MP3 (requires pydub and ffmpeg)
                 try:
-                    from pydub import AudioSegment
                     import tempfile
+
+                    from pydub import AudioSegment
 
                     # Write to temporary WAV file first
                     with tempfile.NamedTemporaryFile(suffix=".wav") as temp_wav:

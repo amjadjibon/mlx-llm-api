@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends, status
 import logging
-from ...models import EmbeddingRequest, EmbeddingResponse, ErrorResponse, ErrorDetail
-from ...services.mlx_service import MLXService
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
 from ...core.dependencies import get_mlx_service_dependency
+from ...models import EmbeddingRequest, EmbeddingResponse, ErrorDetail, ErrorResponse
+from ...services.mlx_service import MLXService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["OpenAI Embeddings"])

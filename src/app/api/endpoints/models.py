@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends, status
-import time
 import logging
-from ...models import ModelListResponse, ModelInfo, ErrorResponse, ErrorDetail
-from ...services.mlx_service import MLXService
+import time
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
 from ...core.dependencies import get_mlx_service_dependency
+from ...models import ErrorDetail, ErrorResponse, ModelInfo, ModelListResponse
+from ...services.mlx_service import MLXService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["OpenAI Models"])

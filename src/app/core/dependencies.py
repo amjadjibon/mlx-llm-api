@@ -1,7 +1,8 @@
 from fastapi import Depends, HTTPException, status
+
 from ..config import Settings, get_settings
-from ..services.mlx_service import MLXService, get_mlx_service
 from ..models import ErrorDetail
+from ..services.mlx_service import MLXService, get_mlx_service
 
 
 def get_current_settings() -> Settings:

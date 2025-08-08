@@ -1,13 +1,15 @@
-from fastapi import APIRouter, HTTPException, Depends, status
 import logging
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from ...core.dependencies import get_mlx_service_dependency
 from ...models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ErrorResponse,
     ErrorDetail,
+    ErrorResponse,
 )
 from ...services.mlx_service import MLXService
-from ...core.dependencies import get_mlx_service_dependency
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/chat", tags=["OpenAI Chat Completions"])

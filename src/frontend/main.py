@@ -1,11 +1,12 @@
-import streamlit as st
-import openai
-import time
 import json
-from typing import List
-from audio_recorder_streamlit import audio_recorder
-import tempfile
 import os
+import tempfile
+import time
+from typing import List
+
+import openai
+import streamlit as st
+from audio_recorder_streamlit import audio_recorder
 
 # Configure Streamlit page
 st.set_page_config(

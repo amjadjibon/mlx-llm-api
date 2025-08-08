@@ -1,5 +1,6 @@
 from fastapi import APIRouter
-from .endpoints import chat, health, completions, embeddings, models, audio
+
+from .endpoints import audio, chat, completions, embeddings, health, models
 
 # Create main API router
 api_router = APIRouter()

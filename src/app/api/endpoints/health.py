@@ -1,18 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, status
-import time
 import logging
+import time
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from ...config import Settings
+from ...core.dependencies import get_current_settings, get_mlx_service_dependency
 from ...models import (
-    HealthResponse,
-    ErrorResponse,
     ErrorDetail,
+    ErrorResponse,
+    HealthResponse,
     LoadModelRequest,
     LoadModelResponse,
-    ModelListResponse,
     ModelInfo,
+    ModelListResponse,
 )
 from ...services.mlx_service import MLXService
-from ...core.dependencies import get_mlx_service_dependency, get_current_settings
-from ...config import Settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Health & Management"])

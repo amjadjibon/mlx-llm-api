@@ -5,6 +5,7 @@ description = "OpenAI compatible API for MLX-LM"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "audio-recorder-streamlit>=0.0.8",
     "fastapi>=0.116.1",
     "kittentts",
     "librosa>=0.11.0",
@@ -12,6 +13,9 @@ dependencies = [
     "mlx-embeddings>=0.0.3",
     "mlx-lm>=0.26.3",
     "mlx-whisper>=0.4.2",
+    "openai>=1.99.3",
+    "pandas>=2.3.1",
+    "plotly>=6.2.0",
     "pydantic-settings>=2.10.1",
     "pydub>=0.25.1",
     "python-multipart>=0.0.10",

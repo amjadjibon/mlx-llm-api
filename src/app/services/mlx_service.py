@@ -748,6 +748,186 @@ class MLXService:
             "available_models": list(self.available_models.keys()),
             "total_available_models": len(self.available_models)
         }
+    
+    # ============================================================================
+    # Audio Processing Methods
+    # ============================================================================
+    
+    async def transcribe_audio(
+        self, 
+        audio_data: bytes,
+        model_name: str = "whisper-large-v3",
+        language: Optional[str] = None,
+        prompt: Optional[str] = None,
+        temperature: float = 0.0,
+        response_format: str = "json"
+    ) -> Dict[str, Any]:
+        """Transcribe audio using mlx-whisper."""
+        try:
+            import mlx_whisper
+            import tempfile
+            import os
+            
+            logger.info(f"Starting audio transcription with model: {model_name}")
+            
+            # Write audio data to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
+                temp_audio.write(audio_data)
+                temp_audio_path = temp_audio.name
+            
+            try:
+                # Transcribe using mlx-whisper
+                result = mlx_whisper.transcribe(
+                    temp_audio_path,
+                    path_or_hf_repo=model_name,
+                    language=language,
+                    initial_prompt=prompt,
+                    temperature=temperature,
+                    verbose=response_format == "verbose_json"
+                )
+                
+                logger.info("Audio transcription completed successfully")
+                return result
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_audio_path):
+                    os.unlink(temp_audio_path)
+                    
+        except ImportError:
+            logger.error("mlx-whisper not available for audio transcription")
+            raise RuntimeError("mlx-whisper library is required for audio transcription")
+        except Exception as e:
+            logger.error(f"Audio transcription failed: {e}")
+            raise RuntimeError(f"Audio transcription failed: {e}")
+    
+    async def translate_audio(
+        self,
+        audio_data: bytes, 
+        model_name: str = "whisper-large-v3",
+        prompt: Optional[str] = None,
+        temperature: float = 0.0,
+        response_format: str = "json"
+    ) -> Dict[str, Any]:
+        """Translate audio to English using mlx-whisper."""
+        try:
+            import mlx_whisper
+            import tempfile
+            import os
+            
+            logger.info(f"Starting audio translation with model: {model_name}")
+            
+            # Write audio data to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
+                temp_audio.write(audio_data)
+                temp_audio_path = temp_audio.name
+            
+            try:
+                # Translate using mlx-whisper (task='translate')
+                result = mlx_whisper.transcribe(
+                    temp_audio_path,
+                    path_or_hf_repo=model_name,
+                    task="translate",  # Force translation to English
+                    initial_prompt=prompt,
+                    temperature=temperature,
+                    verbose=response_format == "verbose_json"
+                )
+                
+                logger.info("Audio translation completed successfully")
+                return result
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_audio_path):
+                    os.unlink(temp_audio_path)
+                    
+        except ImportError:
+            logger.error("mlx-whisper not available for audio translation")
+            raise RuntimeError("mlx-whisper library is required for audio translation")
+        except Exception as e:
+            logger.error(f"Audio translation failed: {e}")
+            raise RuntimeError(f"Audio translation failed: {e}")
+    
+    async def generate_speech(
+        self,
+        text: str,
+        voice: str = "expr-voice-2-f",
+        response_format: str = "wav",
+        speed: float = 1.0
+    ) -> bytes:
+        """Generate speech from text using KittenTTS."""
+        try:
+            from kittentts import KittenTTS
+            import soundfile as sf
+            import io
+            
+            logger.info(f"Starting TTS generation with voice: {voice}")
+            
+            # Initialize KittenTTS model
+            if not hasattr(self, '_tts_model') or self._tts_model is None:
+                logger.info("Loading KittenTTS model...")
+                self._tts_model = KittenTTS("KittenML/kitten-tts-nano-0.1")
+                logger.info("KittenTTS model loaded successfully")
+            
+            # Generate audio
+            audio = self._tts_model.generate(text, voice=voice)
+            
+            # Apply speed adjustment if needed
+            if speed != 1.0:
+                # Simple time-stretching by resampling (requires librosa)
+                try:
+                    import librosa
+                    audio = librosa.effects.time_stretch(audio, rate=speed)
+                except ImportError:
+                    logger.warning("librosa not available, speed adjustment skipped")
+            
+            # Convert to bytes based on response format
+            if response_format.lower() in ['wav', 'pcm']:
+                # Write to bytes buffer as WAV
+                buffer = io.BytesIO()
+                sf.write(buffer, audio, 24000, format='wav')
+                return buffer.getvalue()
+            elif response_format.lower() == 'mp3':
+                # Convert to MP3 (requires pydub and ffmpeg)
+                try:
+                    from pydub import AudioSegment
+                    import tempfile
+                    
+                    # Write to temporary WAV file first
+                    with tempfile.NamedTemporaryFile(suffix='.wav') as temp_wav:
+                        sf.write(temp_wav.name, audio, 24000, format='wav')
+                        
+                        # Convert to MP3
+                        audio_segment = AudioSegment.from_wav(temp_wav.name)
+                        buffer = io.BytesIO()
+                        audio_segment.export(buffer, format='mp3')
+                        return buffer.getvalue()
+                        
+                except ImportError:
+                    logger.warning("pydub not available, falling back to WAV format")
+                    buffer = io.BytesIO()
+                    sf.write(buffer, audio, 24000, format='wav')
+                    return buffer.getvalue()
+            else:
+                # Default to WAV
+                buffer = io.BytesIO()
+                sf.write(buffer, audio, 24000, format='wav')
+                return buffer.getvalue()
+            
+        except ImportError as e:
+            logger.error(f"Required library not available for TTS: {e}")
+            raise RuntimeError(f"TTS library not available: {e}")
+        except Exception as e:
+            logger.error(f"TTS generation failed: {e}")
+            raise RuntimeError(f"TTS generation failed: {e}")
+    
+    def is_audio_model(self, model_name: str) -> bool:
+        """Check if a model is designed for audio processing."""
+        audio_indicators = [
+            'whisper', 'audio', 'speech', 'asr', 'stt', 'tts'
+        ]
+        model_lower = model_name.lower()
+        return any(indicator in model_lower for indicator in audio_indicators)
 
 
 @lru_cache()

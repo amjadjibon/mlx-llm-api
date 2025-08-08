@@ -206,3 +206,85 @@ class ChatCompletionRequest(BaseModel):
 
 
 # Remove the old ChatCompletionRequest class that was defined earlier
+
+
+# ============================================================================
+# OpenAI Audio API Models
+# ============================================================================
+
+class AudioTranscriptionRequest(BaseModel):
+    """OpenAI audio transcription request model."""
+    file: bytes = Field(..., description="Audio file to transcribe")
+    model: str = Field(..., description="Model to use for transcription")
+    language: Optional[str] = Field(None, description="Language of the audio (ISO 639-1)")
+    prompt: Optional[str] = Field(None, description="Optional prompt to guide transcription")
+    response_format: Optional[Literal["json", "text", "srt", "verbose_json", "vtt"]] = Field(
+        "json", description="Format of the transcript output"
+    )
+    temperature: Optional[float] = Field(0.0, description="Sampling temperature", ge=0.0, le=1.0)
+    timestamp_granularities: Optional[List[Literal["word", "segment"]]] = Field(
+        None, description="Timestamp granularities"
+    )
+
+
+class AudioTranslationRequest(BaseModel):
+    """OpenAI audio translation request model."""
+    file: bytes = Field(..., description="Audio file to translate")
+    model: str = Field(..., description="Model to use for translation")
+    prompt: Optional[str] = Field(None, description="Optional prompt to guide translation")
+    response_format: Optional[Literal["json", "text", "srt", "verbose_json", "vtt"]] = Field(
+        "json", description="Format of the transcript output"
+    )
+    temperature: Optional[float] = Field(0.0, description="Sampling temperature", ge=0.0, le=1.0)
+
+
+class AudioSpeechRequest(BaseModel):
+    """OpenAI text-to-speech request model."""
+    model: str = Field(..., description="Model to use for TTS")
+    input: str = Field(..., description="Text to convert to speech", max_length=4096)
+    voice: Optional[str] = Field("expr-voice-2-f", description="Voice to use for TTS")
+    response_format: Optional[Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]] = Field(
+        "wav", description="Audio format"
+    )
+    speed: Optional[float] = Field(1.0, description="Speech speed", ge=0.25, le=4.0)
+
+
+class AudioTranscriptionResponse(BaseModel):
+    """Audio transcription response model."""
+    text: str = Field(..., description="Transcribed text")
+
+
+class AudioTranslationResponse(BaseModel):
+    """Audio translation response model."""
+    text: str = Field(..., description="Translated text")
+
+
+class AudioSegment(BaseModel):
+    """Audio segment with timestamps."""
+    id: int = Field(..., description="Segment ID")
+    seek: int = Field(..., description="Seek position")
+    start: float = Field(..., description="Start time in seconds")
+    end: float = Field(..., description="End time in seconds")
+    text: str = Field(..., description="Segment text")
+    tokens: List[int] = Field(..., description="Token IDs")
+    temperature: float = Field(..., description="Temperature used")
+    avg_logprob: float = Field(..., description="Average log probability")
+    compression_ratio: float = Field(..., description="Compression ratio")
+    no_speech_prob: float = Field(..., description="No speech probability")
+
+
+class AudioWord(BaseModel):
+    """Audio word with timestamp."""
+    word: str = Field(..., description="Word text")
+    start: float = Field(..., description="Start time in seconds")
+    end: float = Field(..., description="End time in seconds")
+
+
+class AudioVerboseResponse(BaseModel):
+    """Verbose audio response with detailed information."""
+    task: str = Field(..., description="Task type (transcribe/translate)")
+    language: str = Field(..., description="Detected language")
+    duration: float = Field(..., description="Audio duration in seconds")
+    text: str = Field(..., description="Full transcript")
+    segments: Optional[List[AudioSegment]] = Field(None, description="Segment details")
+    words: Optional[List[AudioWord]] = Field(None, description="Word-level timestamps")

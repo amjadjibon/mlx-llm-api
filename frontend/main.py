@@ -267,6 +267,10 @@ def process_user_input(user_input: str, input_type: str = "text"):
 # Custom chat input area with voice button - ChatGPT style
 st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
 
+# Initialize input counter for unique keys
+if "input_counter" not in st.session_state:
+    st.session_state.input_counter = 0
+
 # Create a ChatGPT-like input container
 input_container = st.container()
 with input_container:
@@ -274,11 +278,11 @@ with input_container:
     col1, col2, col3 = st.columns([8, 1, 1], gap="small")
     
     with col1:
-        # Text input with ChatGPT styling
+        # Text input with ChatGPT styling - use dynamic key to enable clearing
         user_input = st.text_input(
             label="Message",
             placeholder="Send a message...",
-            key="chat_input",
+            key=f"chat_input_{st.session_state.input_counter}",
             label_visibility="collapsed",
             help="Type your message here or use voice input"
         )
@@ -307,8 +311,9 @@ with input_container:
                     os.unlink(tmp_file.name)
 
                     if transcribed_text:
-                        # Process voice input
+                        # Process voice input and increment counter to clear input
                         process_user_input(transcribed_text, "audio")
+                        st.session_state.input_counter += 1
                         st.rerun()
     
     with col3:
@@ -326,14 +331,14 @@ st.markdown('</div>', unsafe_allow_html=True)
 if user_input and user_input.strip():  # Only process non-empty messages
     if send_button:  # Send button clicked
         process_user_input(user_input.strip(), "text")
-        # Clear the input by rerunning the app
-        st.session_state.chat_input = ""  # Clear the input field
+        # Increment counter to create new input widget (effectively clearing)
+        st.session_state.input_counter += 1
         st.rerun()
-    elif user_input != st.session_state.get("last_input", ""):  # Enter key pressed
+    elif user_input != st.session_state.get("last_input", ""):  # Enter key pressed (new input)
         st.session_state.last_input = user_input
         process_user_input(user_input.strip(), "text")
-        # Clear the input by rerunning the app
-        st.session_state.chat_input = ""  # Clear the input field  
+        # Increment counter to create new input widget (effectively clearing)
+        st.session_state.input_counter += 1
         st.rerun()
 
 # Footer

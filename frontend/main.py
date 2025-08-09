@@ -3,6 +3,8 @@ import os
 import tempfile
 import time
 from typing import List
+import re
+import html
 
 import openai
 import streamlit as st
@@ -10,7 +12,7 @@ from audio_recorder_streamlit import audio_recorder
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="MLX ChatGPT Clone",
+    page_title="MLX Chat",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -73,9 +75,47 @@ def generate_speech(
         return b""
 
 
+# Text preprocessing helpers for UI and TTS
+def remove_think_blocks(text: str) -> str:
+    """Remove <think>...</think> sections from text (case-insensitive)."""
+    if not text:
+        return text
+    return re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE)
+
+
+def remove_emojis(text: str) -> str:
+    """Remove emojis and miscellaneous symbols to keep TTS clean."""
+    if not text:
+        return text
+    emoji_pattern = re.compile(
+        """
+        [\U0001F600-\U0001F64F]  # emoticons
+        |[\U0001F300-\U0001F5FF]  # symbols & pictographs
+        |[\U0001F680-\U0001F6FF]  # transport & map symbols
+        |[\U0001F700-\U0001F77F]  # alchemical symbols
+        |[\U0001F780-\U0001F7FF]  # geometric shapes extended
+        |[\U0001F800-\U0001F8FF]  # supplemental arrows-c
+        |[\U0001F900-\U0001F9FF]  # supplemental symbols and pictographs
+        |[\U0001FA00-\U0001FA6F]  # chess symbols etc.
+        |[\U0001FA70-\U0001FAFF]  # symbols and pictographs extended-a
+        |[\u2600-\u26FF]          # misc symbols
+        |[\u2700-\u27BF]          # dingbats
+        """,
+        flags=re.VERBOSE,
+    )
+    return emoji_pattern.sub("", text)
+
+
+def prepare_tts_text(text: str) -> str:
+    """Prepare text for TTS: remove <think> blocks and emojis, normalize spaces."""
+    text_without_think = remove_think_blocks(text)
+    text_without_emojis = remove_emojis(text_without_think)
+    return re.sub(r"\s+", " ", text_without_emojis).strip()
+
+
 # Sidebar configuration
 with st.sidebar:
-    st.title("🤖 MLX ChatGPT Clone")
+    st.title("🤖 MLX Chat")
     st.markdown("---")
 
     # API Configuration
@@ -178,7 +218,24 @@ with chat_container:
     # Display chat messages
     for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
-            st.write(message["content"])
+            if message["role"] == "assistant":
+                # Render thinking box if present
+                think_blocks = re.findall(r"<think>([\s\S]*?)</think>", message["content"], flags=re.IGNORECASE)
+                if think_blocks:
+                    think_text = "\n\n".join(think_blocks)
+                    st.markdown(
+                        f"""
+                        <div class=\"thinking-box\">
+                            <div class=\"thinking-title\">Thinking</div>
+                            <pre class=\"thinking-content\">{html.escape(think_text)}</pre>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                st.write(remove_think_blocks(message["content"]))
+            else:
+                st.write(message["content"])
 
             # Add audio icon for transcribed messages
             if message.get("type") == "audio":
@@ -191,13 +248,15 @@ with chat_container:
                     if st.button("🔊", key=f"tts_{i}"):
                         if st.session_state.client:
                             with st.spinner("Generating speech..."):
-                                audio_data = generate_speech(
-                                    st.session_state.client,
-                                    message["content"],
-                                    selected_voice,
-                                )
-                                if audio_data:
-                                    st.audio(audio_data, format="audio/wav")
+                                tts_text = prepare_tts_text(message["content"]) or ""
+                                if tts_text:
+                                    audio_data = generate_speech(
+                                        st.session_state.client,
+                                        tts_text,
+                                        selected_voice,
+                                    )
+                                    if audio_data:
+                                        st.audio(audio_data, format="audio/wav")
 
 # Initialize recording state
 if "is_recording" not in st.session_state:
@@ -245,8 +304,25 @@ def process_user_input(user_input: str, input_type: str = "text"):
 
                 full_response = response.choices[0].message.content
 
+            # Thinking box during generation (if present)
+            think_blocks = re.findall(r"<think>([\s\S]*?)</think>", full_response, flags=re.IGNORECASE)
+            if think_blocks:
+                think_text = "\n\n".join(think_blocks)
+                st.markdown(
+                    f"""
+                    <div class=\"thinking-box\">
+                        <div class=\"thinking-title\">Thinking</div>
+                        <pre class=\"thinking-content\">{html.escape(think_text)}</pre>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # Remove <think> blocks from display
+            display_response = remove_think_blocks(full_response)
+
             # Display response with typewriter effect
-            words = full_response.split()
+            words = display_response.split()
             displayed_response = ""
 
             for word in words:
@@ -254,7 +330,7 @@ def process_user_input(user_input: str, input_type: str = "text"):
                 message_placeholder.markdown(displayed_response + "▌")
                 time.sleep(0.05)
 
-            message_placeholder.markdown(full_response)
+            message_placeholder.markdown(display_response)
 
             # Add assistant message to session state
             st.session_state.messages.append(
@@ -288,15 +364,17 @@ with input_container:
         )
     
     with col2:
-        # Voice recording button - compact version
+        # Voice recording button - compact version with wrapper to help styling
+        st.markdown('<div class="voice-button-wrapper">', unsafe_allow_html=True)
         audio_bytes = audio_recorder(
             text="",
             recording_color="#ff4b4b",
-            neutral_color="#f0f2f6",
+            neutral_color="#ffffff",
             icon_name="microphone",
-            icon_size="1x",
+            icon_size="2x",
             key="voice_input"
         )
+        st.markdown('</div>', unsafe_allow_html=True)
         
         # Process recorded audio immediately
         if audio_bytes and st.session_state.client:
@@ -319,7 +397,7 @@ with input_container:
     with col3:
         # Send button with improved styling
         send_button = st.button(
-            "⬆", 
+            "➤", 
             key="send_button", 
             help="Send message (Enter)",
             disabled=not user_input.strip() if user_input else True
@@ -377,17 +455,17 @@ st.markdown(
         outline: none;
     }
     
-    /* Send button styling - ChatGPT style */
-    .stButton > button[key="send_button"] {
-        background-color: #000000;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        width: 32px;
-        height: 32px;
-        margin-top: 8px;
-        font-size: 16px;
-        font-weight: bold;
+    /* Chat input controls: unified boxed black icons (send + voice) */
+    .chat-input-container .stButton button {
+        background-color: #ffffff;
+        color: #000000;
+        border: 1px solid #d1d5db;
+        border-radius: 10px;
+        width: 40px;
+        height: 40px;
+        margin-top: 4px;
+        font-size: 18px;
+        font-weight: 600;
         transition: all 0.2s ease;
         cursor: pointer;
         display: flex;
@@ -396,14 +474,16 @@ st.markdown(
         padding: 0;
     }
     
-    .stButton > button[key="send_button"]:hover:not(:disabled) {
-        background-color: #2d2d2d;
-        transform: scale(1.05);
+    .chat-input-container .stButton button:hover:not(:disabled) {
+        background-color: #f9fafb;
+        border-color: #111827;
+        transform: scale(1.03);
     }
     
-    .stButton > button[key="send_button"]:disabled {
-        background-color: #e5e5e5;
+    .chat-input-container .stButton button:disabled {
+        background-color: #f9fafb;
         color: #9ca3af;
+        border-color: #e5e7eb;
         cursor: not-allowed;
         transform: none;
     }
@@ -479,12 +559,37 @@ st.markdown(
         margin-top: 20px;
     }
     
-    /* Voice button specific styling */
-    div[data-testid="stAudioRecorder"] > div {
+    /* Voice button specific styling (boxed black icon to match send) */
+    .chat-input-container [data-testid="stAudioRecorder"] {
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-top: 8px;
+    }
+    .chat-input-container [data-testid="stAudioRecorder"] > div {
+        width: 44px;
+        height: 44px;
+        background: #ffffff !important;
+        border: 1px solid #d1d5db !important;
+        border-radius: 10px !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 !important;
+        box-shadow: none !important;
+        margin-top: 4px;
+        transition: all 0.2s ease;
+    }
+    .chat-input-container [data-testid="stAudioRecorder"] svg,
+    .chat-input-container [data-testid="stAudioRecorder"] path,
+    .chat-input-container [data-testid="stAudioRecorder"] i {
+        color: #000000 !important;
+        fill: #000000 !important;
+        stroke: #000000 !important;
+    }
+    .chat-input-container [data-testid="stAudioRecorder"] > div:hover {
+        background-color: #f9fafb !important;
+        border-color: #111827 !important;
+        transform: scale(1.03);
     }
     
     /* Improve text input width */
@@ -495,6 +600,29 @@ st.markdown(
     /* Chat container styling */
     .main-chat-container {
         padding-bottom: 100px;
+    }
+    /* Thinking box styling */
+    .thinking-box {
+        border: 1px dashed #d1d5db;
+        background: #fbfbfd;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin: 8px 0 12px 0;
+    }
+    .thinking-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: #6b7280;
+        letter-spacing: 0.02em;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+    }
+    .thinking-content {
+        margin: 0;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        color: #374151;
     }
 </style>
 """,

@@ -369,7 +369,7 @@ with input_container:
         audio_bytes = audio_recorder(
             text="",
             recording_color="#ff4b4b",
-            neutral_color="#ffffff",
+            neutral_color="#000000",
             icon_name="microphone",
             icon_size="2x",
             key="voice_input"
@@ -398,7 +398,7 @@ with input_container:
         # Send button with improved styling
         send_button = st.button(
             "➤", 
-            key="send_button", 
+            key="send_button",
             help="Send message (Enter)",
             disabled=not user_input.strip() if user_input else True
         )
@@ -578,13 +578,23 @@ st.markdown(
         box-shadow: none !important;
         margin-top: 4px;
         transition: all 0.2s ease;
+        position: relative;
     }
+    /* Hide the built-in icon to avoid contrast issues and overlay our own */
     .chat-input-container [data-testid="stAudioRecorder"] svg,
     .chat-input-container [data-testid="stAudioRecorder"] path,
     .chat-input-container [data-testid="stAudioRecorder"] i {
-        color: #000000 !important;
-        fill: #000000 !important;
-        stroke: #000000 !important;
+        opacity: 0 !important;
+    }
+    .chat-input-container [data-testid="stAudioRecorder"] > div::before {
+        content: "🎤";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 18px;
+        line-height: 1;
+        color: #000000;
     }
     .chat-input-container [data-testid="stAudioRecorder"] > div:hover {
         background-color: #f9fafb !important;

@@ -1057,6 +1057,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "soundfile" },
     { name = "streamlit" },
+    { name = "streamlit-audiorec" },
     { name = "uvicorn" },
 ]
 
@@ -1084,6 +1085,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.10" },
     { name = "soundfile", specifier = ">=0.13.0" },
     { name = "streamlit", specifier = ">=1.48.0" },
+    { name = "streamlit-audiorec", specifier = ">=0.1.3" },
     { name = "uvicorn", specifier = ">=0.35.0" },
 ]
 
@@ -2496,6 +2498,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b8/9f/373ba8d9f1190cce0a1b04cd9e77fd933c8238506aa1e3440eefabfc16f3/streamlit-1.48.0.tar.gz", hash = "sha256:64da4819f4b897c8d1e9eb6396f4618b2eb5029d25af61472422d4eb0688bb75", size = 9526680 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/14/92/095c67f3d17b6116c2b1882bb5ac719939154ee5bc7e7610ee325159a101/streamlit-1.48.0-py3-none-any.whl", hash = "sha256:0f2bc697a1a4d2199384d8bb3966aa0b25904c9345e6d6ad6fbb69bd284c03a2", size = 9928889 },
+]
+
+[[package]]
+name = "streamlit-audiorec"
+version = "0.1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7b/ad/6bb8db00e816d52a804c451f86784b3606f25561f9921829d549499b4eb1/streamlit-audiorec-0.1.3.tar.gz", hash = "sha256:0d1bf9490a7cd2c90529262f309a59fa566f0b2e83eecf03f26e5c42d241eb51", size = 3362 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/bb/3a0f70283264ed42587b5cc23189ccd3ef0ed94c0cf18fe204f6b7b4d36f/streamlit_audiorec-0.1.3-py3-none-any.whl", hash = "sha256:ade3e880ed072733e129438f06c40516304598c7439ecbf8406dbdcd6bd4ac66", size = 872814 },
 ]
 
 [[package]]
